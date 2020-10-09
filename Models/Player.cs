@@ -11,5 +11,9 @@
         public double Y { get; set; }
 
         public double Z { get; set; }
+
+        public string Team { get; set; }
+
+        public string Color { get; set; }
     }
 }

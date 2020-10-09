@@ -24,7 +24,7 @@ namespace GamemakerMultiplayerServer
             var ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
             var ipAddress = ipHostInfo.AddressList[1];
             var localEndPoint = new IPEndPoint(ipAddress, 2525);
-           
+
             // Create TCP socket
             var socket = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             Console.WriteLine($"Server started on {ipAddress.ToString()}:{port}");
@@ -42,7 +42,7 @@ namespace GamemakerMultiplayerServer
                     allDone.Reset();
 
                     // Start an asynchronous socket to listen for connections.  
-                    socket.BeginAccept(new AsyncCallback(AcceptCallback), socket);
+                    socket.BeginAccept(new AsyncCallback(ConnectPlayer), socket);
                     allDone.WaitOne();
                 }
             }
@@ -56,7 +56,7 @@ namespace GamemakerMultiplayerServer
             Console.Read();
         }
 
-        public static void AcceptCallback(IAsyncResult ar)
+        public static void ConnectPlayer(IAsyncResult ar)
         {
             allDone.Set();
 
@@ -75,7 +75,7 @@ namespace GamemakerMultiplayerServer
                         X = 0,
                         Y = 0,
                         Z = 0,
-                        ID = -1
+                        ID = 0
                     });
 
                 // Listen to incoming data
@@ -90,7 +90,7 @@ namespace GamemakerMultiplayerServer
                     //Console.WriteLine(content);
                 }
             }
-            catch(SocketException)
+            catch (SocketException)
             {
                 Console.WriteLine("Client disconnected forcecully, closing connection.");
 
@@ -98,7 +98,7 @@ namespace GamemakerMultiplayerServer
                 socket.Shutdown(SocketShutdown.Both);
                 socket.Close();
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine("Something went wrong.");
                 Console.WriteLine(ex.Message);
@@ -131,7 +131,7 @@ namespace GamemakerMultiplayerServer
         }
 
         public static void SendCallback(Socket socket, string data)
-        { 
+        {
             byte[] byteData = Encoding.ASCII.GetBytes(data);
 
             socket.Send(byteData, 0, byteData.Length, 0);
@@ -157,7 +157,7 @@ namespace GamemakerMultiplayerServer
             // Data is mapped by commands by default
             var command = MapCommand(data);
 
-            if(command == ServerCommands.None || command == ServerCommands.Unknown)
+            if (command == ServerCommands.None || command == ServerCommands.Unknown)
             {
                 return; // Can't process command properly, stop
             }
@@ -166,30 +166,72 @@ namespace GamemakerMultiplayerServer
         }
 
         #region Commands
-        private static void SetPlayerPosition(Socket socket, string data)
-        {
-            /*
-            player.X = x;
-            player.Y = y;
-            player.Z = z;
-            */
-        }
-
         private static void SetPlayerData(Socket socket, string data)
         {
-            /*
-            player.Name = name;
-            */
+            var player = ConnectedPlayers[socket];
+
+            if (string.IsNullOrWhiteSpace(data) || player == null)
+                return;
+
+            string[] dataLines = SplitData(data);
+
+            // Map values
+            player.Name = dataLines[1];
+            player.Color = dataLines[2];
+            player.Team = dataLines[3];
+
+            Console.WriteLine($"Name: { player.Name }, color: { player.Color }, team: { player.Team }");
         }
 
-        private static void Ping(Socket socket, string data)
+        private static void SetPlayerPosition(Socket socket, string data)
+        {
+            var player = ConnectedPlayers[socket];
+
+            if (string.IsNullOrWhiteSpace(data) || player == null)
+                return;
+
+            string[] dataLines = SplitData(data);
+
+            // Map values
+            int _X;
+            if (int.TryParse(dataLines[1], out _X))
+            {
+                player.X = _X;
+
+            }
+
+            int _Y;
+            if (int.TryParse(dataLines[2], out _Y))
+            {
+                player.Y = _Y;
+
+            }
+
+            int _Z;
+            if (int.TryParse(dataLines[3], out _Z))
+            {
+                player.Z = _Z;
+
+            }
+
+            Console.WriteLine($"{ player.Name } moved to: X { player.X } Y: { player.Y } Z: { player.Z }");
+        }
+
+        private static void Ping(Socket socket)
         {
             SendCallback(socket, "PONG");
         }
 
-        private static void DisconnectPlayer(Socket socket, string data)
+        private static void DisconnectPlayer(Socket socket)
         {
+            var player = ConnectedPlayers[socket];
 
+            if (player != null)
+            {
+                Console.WriteLine($"Disconnecting player { player.Name }");
+            }
+
+            DisconnectSocket(socket);
         }
 
         #endregion
@@ -199,22 +241,23 @@ namespace GamemakerMultiplayerServer
         {
             Player player;
 
-            if(ConnectedPlayers[socket] != null)
+            if (ConnectedPlayers[socket] != null)
                 player = ConnectedPlayers[socket];
 
-            switch(command)
+            switch (command)
             {
                 case ServerCommands.Ping:
-                    Ping(socket, data);
+                    Ping(socket);
                     break;
                 case ServerCommands.Disconnect:
-                    DisconnectSocket(socket);
+                    DisconnectPlayer(socket);
                     break;
                 case ServerCommands.SetPlayerData:
+                    SetPlayerData(socket, data);
                     break;
                 case ServerCommands.SetPlayerPosition:
+                    SetPlayerPosition(socket, data);
                     break;
-
             }
         }
 
@@ -247,6 +290,11 @@ namespace GamemakerMultiplayerServer
                 default:
                     return ServerCommands.Unknown;
             }
+        }
+
+        private static string[] SplitData(string data)
+        {
+            return data.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
         }
         #endregion
 
