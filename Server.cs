@@ -130,10 +130,8 @@ namespace GamemakerMultiplayerServer
             }
         }
 
-        public static void SendCallback(StateObject state, string data)
-        {
-            var socket = state.workSocket;
-
+        public static void SendCallback(Socket socket, string data)
+        { 
             byte[] byteData = Encoding.ASCII.GetBytes(data);
 
             socket.Send(byteData, 0, byteData.Length, 0);
@@ -186,7 +184,7 @@ namespace GamemakerMultiplayerServer
 
         private static void Ping(Socket socket, string data)
         {
-
+            SendCallback(socket, "PONG");
         }
 
         private static void DisconnectPlayer(Socket socket, string data)
@@ -206,6 +204,9 @@ namespace GamemakerMultiplayerServer
 
             switch(command)
             {
+                case ServerCommands.Ping:
+                    Ping(socket, data);
+                    break;
                 case ServerCommands.Disconnect:
                     DisconnectSocket(socket);
                     break;
@@ -213,6 +214,7 @@ namespace GamemakerMultiplayerServer
                     break;
                 case ServerCommands.SetPlayerPosition:
                     break;
+
             }
         }
 
@@ -224,7 +226,7 @@ namespace GamemakerMultiplayerServer
             if (data.Contains("CMD_"))
             {
                 int commandIndex = data.IndexOf("CMD_");
-                command = data.Substring(commandIndex + 4, 3);
+                command = data.Substring(commandIndex + 4, 4);
             }
             else
             {
