@@ -1,4 +1,4 @@
-﻿namespace GamemakerMultiplayerServer.Models
+﻿namespace MultiplayerServer.Models
 {
     public class Player
     {

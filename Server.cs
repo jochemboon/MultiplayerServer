@@ -1,5 +1,5 @@
-﻿using GamemakerMultiplayerServer.Helpers;
-using GamemakerMultiplayerServer.Models;
+﻿using MultiplayerServer.Helpers;
+using MultiplayerServer.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,7 +9,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
-namespace GamemakerMultiplayerServer
+namespace MultiplayerServer
 {
     public static class Server
     {
@@ -79,9 +79,6 @@ namespace GamemakerMultiplayerServer
             UpdatePlayerData(player);
             try
             {
-                
-
-                // Listen to incoming data from player
                 while (socket != null)
                 {
                     var state = new StateObject();
@@ -90,16 +87,12 @@ namespace GamemakerMultiplayerServer
 
                     if (data != "")
                         ProcessData(socket, data);
-                    //Console.WriteLine(content);
                 }
             }
             catch (SocketException)
             {
                 Console.WriteLine("Client disconnected forcefully, closing connection.");
-
-                // Sluit verbinding
-                socket.Shutdown(SocketShutdown.Both);
-                socket.Close();
+                DisconnectPlayer(socket);
             }
             catch (Exception ex)
             {
@@ -194,7 +187,6 @@ namespace GamemakerMultiplayerServer
 
             ProcessCommand(socket, command, data);
         }
-
         #endregion
 
         /// <summary>
@@ -203,6 +195,7 @@ namespace GamemakerMultiplayerServer
         /// <param name="player"></param>
         private static void UpdatePlayerPosition(Player player)
         {
+            stopWatch.Reset();
             stopWatch.Start();
 
             string data = PacketBuilder.BuildPlayerPosition(player);
@@ -213,11 +206,12 @@ namespace GamemakerMultiplayerServer
             }
 
             stopWatch.Stop();
-            Console.WriteLine($"Updating position of { player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
+            Console.WriteLine($"Updating position of {player.ID}:{ player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
         }
 
         private static void UpdatePlayerData(Player player)
         {
+            stopWatch.Reset();
             stopWatch.Start();
 
             string data = PacketBuilder.BuildPlayerData(player);
@@ -228,12 +222,20 @@ namespace GamemakerMultiplayerServer
             }
 
             stopWatch.Stop();
-            Console.WriteLine($"Updating position of { player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
+            Console.WriteLine($"Updating data of {player.ID}:{ player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
         }
 
-        private static void DisconnectSocket(Socket socket)
+        private static void DisconnectPlayer(Socket socket)
         {
+            var player = ConnectedPlayers[socket];
+
+            if (player != null)
+            {
+                Console.WriteLine($"Disconnecting player { player.Name }");
+            }
+
             socket.Shutdown(SocketShutdown.Both);
+            ConnectedPlayers.Remove(socket);
             socket.Close();
         }
 
@@ -295,19 +297,6 @@ namespace GamemakerMultiplayerServer
         {
             SendData(socket, "PONG");
         }
-
-        private static void DisconnectPlayer(Socket socket)
-        {
-            var player = ConnectedPlayers[socket];
-
-            if (player != null)
-            {
-                Console.WriteLine($"Disconnecting player { player.Name }");
-            }
-
-            DisconnectSocket(socket);
-        }
-
         #endregion
 
         #region Processing commands
@@ -369,89 +358,6 @@ namespace GamemakerMultiplayerServer
         private static string[] SplitData(string data)
         {
             return data.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-        }
-        #endregion
-
-        #region Async variants
-        public static void ReadCallbackAsync(IAsyncResult ar)
-        {
-            string content = string.Empty;
-
-            var state = (StateObject)ar.AsyncState;
-            var handler = state.workSocket;
-
-            // Read data
-            int byteCount = handler.EndReceive(ar);
-            if (byteCount > 0)
-            {
-                state.sb.Append(Encoding.ASCII.GetString(state.buffer, 0, byteCount));
-
-                content = state.sb.ToString();
-
-                if (content.IndexOf("<EOF>") > -1)
-                {
-                    // Done reading data
-                    Console.WriteLine($"Read {content.Length} bytes from socket. \n Data: {content}");
-
-                    // Process data
-                    ProcessData(handler, content);
-                }
-                else
-                {
-                    // Continue reading data
-                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallbackAsync), state);
-                }
-            }
-        }
-
-        private static void SendAsync(Socket handler, String data)
-        {
-            byte[] byteData = Encoding.ASCII.GetBytes(data);
-
-            handler.BeginSend(byteData, 0, byteData.Length, 0, new AsyncCallback(SendCallbackAsync), handler);
-        }
-
-        private static void SendCallbackAsync(IAsyncResult ar)
-        {
-            try
-            {
-                var socket = (Socket)ar.AsyncState;
-
-                int bytesSent = socket.EndSend(ar);
-
-                Console.WriteLine($"Sent {bytesSent} bytes to the client");
-
-                // Sluit verbinding
-                socket.Shutdown(SocketShutdown.Both);
-                socket.Close();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
-            }
-        }
-
-        private static void DisconnectPlayerAsync(IAsyncResult ar)
-        {
-            Player player;
-
-            try
-            {
-                var socket = (Socket)ar.AsyncState;
-
-                if (ConnectedPlayers[socket] != null)
-                {
-                    player = ConnectedPlayers[socket];
-                    Console.WriteLine($"Player {player.Name} is disconnecting");
-                }
-
-                // Sluit verbinding
-                DisconnectSocket(socket);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
-            }
         }
         #endregion
     }

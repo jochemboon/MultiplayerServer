@@ -1,7 +1,7 @@
 ﻿using System.Net.Sockets;
 using System.Text;
 
-namespace GamemakerMultiplayerServer
+namespace MultiplayerServer
 {
     public class StateObject
     {

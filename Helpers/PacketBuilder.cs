@@ -1,7 +1,7 @@
-﻿using GamemakerMultiplayerServer.Models;
+﻿using MultiplayerServer.Models;
 using System.Text;
 
-namespace GamemakerMultiplayerServer.Helpers
+namespace MultiplayerServer.Helpers
 {
     /// <summary>
     /// Builds and formats network packets.

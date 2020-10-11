@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace GamemakerMultiplayerServer
+namespace MultiplayerServer
 {
     public enum ServerCommands
     {
