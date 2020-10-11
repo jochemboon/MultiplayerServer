@@ -1,6 +1,9 @@
-﻿using GamemakerMultiplayerServer.Models;
+﻿using GamemakerMultiplayerServer.Helpers;
+using GamemakerMultiplayerServer.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,10 +17,13 @@ namespace GamemakerMultiplayerServer
 
         public static Dictionary<Socket, Player> ConnectedPlayers { get; set; }
 
+        public static Stopwatch stopWatch { get; set; }
+
         public static void Start()
         {
             Console.WriteLine("Starting server");
             ConnectedPlayers = new Dictionary<Socket, Player>();
+            stopWatch = new Stopwatch();
             int port = 2525;
 
             // Create listener
@@ -42,7 +48,7 @@ namespace GamemakerMultiplayerServer
                     allDone.Reset();
 
                     // Start an asynchronous socket to listen for connections.  
-                    socket.BeginAccept(new AsyncCallback(ConnectPlayer), socket);
+                    socket.BeginAccept(new AsyncCallback(SetupPlayerConnection), socket);
                     allDone.WaitOne();
                 }
             }
@@ -56,7 +62,11 @@ namespace GamemakerMultiplayerServer
             Console.Read();
         }
 
-        public static void ConnectPlayer(IAsyncResult ar)
+        /// <summary>
+        /// Adds a player to the pool of connected player and starts listening to data from the connected socket.
+        /// </summary>
+        /// <param name="ar">The player</param>
+        public static void SetupPlayerConnection(IAsyncResult ar)
         {
             allDone.Set();
 
@@ -65,25 +75,18 @@ namespace GamemakerMultiplayerServer
             var socket = listener.EndAccept(ar);
 
             Console.WriteLine("Player connected");
-
+            var player = AddPlayer(socket);
+            UpdatePlayerData(player);
             try
             {
-                ConnectedPlayers.Add(socket,
-                    new Player()
-                    {
-                        Name = "UNASSIGNED",
-                        X = 0,
-                        Y = 0,
-                        Z = 0,
-                        ID = 0
-                    });
+                
 
-                // Listen to incoming data
+                // Listen to incoming data from player
                 while (socket != null)
                 {
                     var state = new StateObject();
                     state.workSocket = socket;
-                    string data = ReadCallback(state);
+                    string data = ReadData(state);
 
                     if (data != "")
                         ProcessData(socket, data);
@@ -92,7 +95,7 @@ namespace GamemakerMultiplayerServer
             }
             catch (SocketException)
             {
-                Console.WriteLine("Client disconnected forcecully, closing connection.");
+                Console.WriteLine("Client disconnected forcefully, closing connection.");
 
                 // Sluit verbinding
                 socket.Shutdown(SocketShutdown.Both);
@@ -105,8 +108,40 @@ namespace GamemakerMultiplayerServer
             }
         }
 
-        // Receiving and sending data
-        public static string ReadCallback(StateObject state)
+        /// <summary>
+        /// Adds a player to the socket
+        /// </summary>
+        /// <param name="socket"></param>
+        public static Player AddPlayer(Socket socket)
+        {
+            int id = 0;
+
+            if(ConnectedPlayers.Count != 0)
+                id = ConnectedPlayers.Max(cp => cp.Value.ID) + 1;
+
+            var player = new Player()
+            {
+                ID = id,
+                Name = "UNASSIGNED",
+                X = 0,
+                Y = 0,
+                Z = 0,
+                Team = "UNASSIGNED",
+                Color = "UNASSIGNED"
+            };
+
+            ConnectedPlayers.Add(socket, player);
+
+            return player;
+        }
+
+        #region Data handling
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="state"></param>
+        /// <returns></returns>
+        public static string ReadData(StateObject state)
         {
             string data = string.Empty;
             var socket = state.workSocket;
@@ -130,30 +165,25 @@ namespace GamemakerMultiplayerServer
             }
         }
 
-        public static void SendCallback(Socket socket, string data)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="socket"></param>
+        /// <param name="data"></param>
+        public static void SendData(Socket socket, string data)
         {
             byte[] byteData = Encoding.ASCII.GetBytes(data);
 
             socket.Send(byteData, 0, byteData.Length, 0);
         }
 
-        private static void DisconnectSocket(Socket socket)
-        {
-            socket.Shutdown(SocketShutdown.Both);
-            socket.Close();
-        }
-
-        // Handle incoming data
+        /// <summary>
+        /// Handles incoming data by mapping it to the relevant command.
+        /// </summary>
+        /// <param name="socket">The socket on which the data was received.</param>
+        /// <param name="data">Data read from the client.</param>
         private static void ProcessData(Socket socket, string data)
         {
-            /*
-            Player player = null;
-            if (ConnectedPlayers[socket] != null)
-                player = ConnectedPlayers[socket];
-            else
-                return; // Can't find the associated player, stop
-            */
-
             // Data is mapped by commands by default
             var command = MapCommand(data);
 
@@ -163,6 +193,48 @@ namespace GamemakerMultiplayerServer
             }
 
             ProcessCommand(socket, command, data);
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Synchronizes the data of a single player among all other players.
+        /// </summary>
+        /// <param name="player"></param>
+        private static void UpdatePlayerPosition(Player player)
+        {
+            stopWatch.Start();
+
+            string data = PacketBuilder.BuildPlayerPosition(player);
+
+            foreach (var socket in ConnectedPlayers.Keys)
+            {
+                SendData(socket, data);
+            }
+
+            stopWatch.Stop();
+            Console.WriteLine($"Updating position of { player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
+        }
+
+        private static void UpdatePlayerData(Player player)
+        {
+            stopWatch.Start();
+
+            string data = PacketBuilder.BuildPlayerData(player);
+
+            foreach (var socket in ConnectedPlayers.Keys)
+            {
+                SendData(socket, data);
+            }
+
+            stopWatch.Stop();
+            Console.WriteLine($"Updating position of { player.Name } to { ConnectedPlayers.Count } players took { stopWatch.ElapsedMilliseconds } ms");
+        }
+
+        private static void DisconnectSocket(Socket socket)
+        {
+            socket.Shutdown(SocketShutdown.Both);
+            socket.Close();
         }
 
         #region Commands
@@ -181,6 +253,7 @@ namespace GamemakerMultiplayerServer
             player.Team = dataLines[3];
 
             Console.WriteLine($"Name: { player.Name }, color: { player.Color }, team: { player.Team }");
+            UpdatePlayerData(player);
         }
 
         private static void SetPlayerPosition(Socket socket, string data)
@@ -215,11 +288,12 @@ namespace GamemakerMultiplayerServer
             }
 
             Console.WriteLine($"{ player.Name } moved to: X { player.X } Y: { player.Y } Z: { player.Z }");
+            UpdatePlayerPosition(player);
         }
 
         private static void Ping(Socket socket)
         {
-            SendCallback(socket, "PONG");
+            SendData(socket, "PONG");
         }
 
         private static void DisconnectPlayer(Socket socket)
