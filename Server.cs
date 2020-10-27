@@ -27,8 +27,7 @@ namespace MultiplayerServer
             int port = 2525;
 
             // Create listener
-            var ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
-            var ipAddress = ipHostInfo.AddressList[1];
+            var ipAddress = Dns.Resolve("192.168.0.116").AddressList[0];
             var localEndPoint = new IPEndPoint(ipAddress, 2525);
 
             // Create TCP socket
@@ -77,6 +76,7 @@ namespace MultiplayerServer
             Console.WriteLine("Player connected");
             var player = AddPlayer(socket);
             UpdatePlayerData(player);
+
             try
             {
                 while (socket != null)
